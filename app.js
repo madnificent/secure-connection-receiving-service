@@ -3,6 +3,7 @@
 import { app, query, errorHandler } from 'mu';
 import fs from 'fs';
 import net from 'net';
+import { spawn } from 'child_process';
 
 // DANGER: removing processors we do not want from the template here
 app._router.stack = removeStackPreProcessors( app._router.stack );
@@ -47,15 +48,28 @@ app.post('/secure', async function( req, res ) {
             // the raw content and this seems to be the way to go about
             // it.
             receivedData += d.toString();
-            res.connection.write(d.toString());
+            // res.connection.write(d.toString());
           })
-          .on('close', () => {
-            res.end();
+          .on('close', async () => {
             console.log("CLOSED CONNECTION");
-            fs.writeFile( "/data/incomingResponse.txt", receivedData,
-                          (err) => err
-                          ? console.log(`error writing file: ${err}`)
-                          : console.log("Wrote file") );
+            fs.writeFile(
+              "/data/incomingResponse.txt", receivedData,
+              (err) => {
+                if( err )
+                  console.log(`error writing file: ${err}`);
+                else {
+                  console.log("Wrote file");
+                  const child =
+                        spawn('gpg', ['--recipient', 'secureproducer@redpencil.io',
+                                      '-o', '/data/encryptedResponseToo.txt.gpg',
+                                      '--encrypt', '/data/incomingResponse.txt']);
+                  fs.readFile( '/data/encryptedResponseToo.txt.gpg', (err, encryptedBody) => {
+                    res.set('Content-Type', 'application/octet-stream');
+                    res.send(encryptedBody);
+                    res.end();
+                  });
+                }
+              });
           })
           .on('error', () => {
             res.end();
