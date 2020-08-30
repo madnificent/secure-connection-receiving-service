@@ -7,8 +7,8 @@ mkdir -p /app/data/secureconnection/.gnupg
 
 echo " DONE"
 
-echo -n "Copying over contenst... "
-cp -a /app/data/secureconnection /root/
+echo -n "Copying over contents... "
+cp -a /app/data/secureconnection/.gnupg /root/
 echo " DONE"
 
 echo "Generating key, supply your input please"

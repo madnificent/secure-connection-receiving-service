@@ -15,6 +15,36 @@
       "mounts": {
         "app": "/app"
       }
+    },
+    {
+      "documentation": {
+        "command": "decrypt",
+        "arguments": ["relative_path"],
+        "description": "Decrypts a file relative to /app"
+      },
+      "environment": {
+        "image": "semtech/secure-connection-receiving-service:dev",
+        "interactive": false,
+        "script": "key-scripts/decrypt.sh"
+      },
+      "mounts": {
+        "app": "/app"
+      }
+    },
+    {
+      "documentation": {
+        "command": "show-keys",
+        "arguments": [],
+        "description": "Lists known keys"
+      },
+      "environment": {
+        "image": "semtech/secure-connection-receiving-service:dev",
+        "interactive": false,
+        "script": "key-scripts/show-keys.sh"
+      },
+      "mounts": {
+        "app": "/app"
+      }
     }
   ]
 }
