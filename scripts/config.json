@@ -1,0 +1,20 @@
+{
+  "version": "0.1",
+  "scripts": [
+    {
+      "documentation": {
+        "command": "create-key",
+        "arguments": [],
+        "description": "Creates a new public/private key"
+      },
+      "environment": {
+        "image": "semtech/secure-connection-receiving-service:dev",
+        "interactive": true,
+        "script": "key-scripts/create.sh"
+      },
+      "mounts": {
+        "app": "/app"
+      }
+    }
+  ]
+}
