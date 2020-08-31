@@ -33,6 +33,21 @@
     },
     {
       "documentation": {
+        "command": "encrypt",
+        "arguments": ["relative-path-to-unencrypted-file", "relative-path-to-encrypted-file"],
+        "description": "Decrypts a file relative to /app"
+      },
+      "environment": {
+        "image": "semtech/secure-connection-receiving-service:dev",
+        "interactive": true,
+        "script": "key-scripts/encrypt.sh"
+      },
+      "mounts": {
+        "app": "/app"
+      }
+    },
+    {
+      "documentation": {
         "command": "show-keys",
         "arguments": [],
         "description": "Lists known keys"
