@@ -9,11 +9,20 @@ import http from 'http';
 // DANGER: removing processors we do not want from the template here
 app._router.stack = removeStackPreProcessors( app._router.stack );
 
+const ACCEPTED_SENDERS = ["secureproducer@redpencil.io", "securerequester@redpencil.io"];
+
 app.get('/self', async function( req, res ) {
   const bodyFile = "/data/incomingRequestGpg.txt";
   const target = "/secure";
   const encryptedResponseFile = "/data/responseGpg.txt";
   const decryptedResponseFile = "/data/response.txt";
+
+  try {
+    fs.unlinkSync( encryptedResponseFile );
+  } catch (e) {}
+  try {
+    fs.unlinkSync( decryptedResponseFile );
+  } catch (e) {}
 
   fs.readFile(bodyFile, 'binary', (err, bodyContent) => {
     let response = "";
@@ -34,30 +43,35 @@ app.get('/self', async function( req, res ) {
         method: "POST",
         headers: {
           'Content-Type': 'application/octet-stream',
-          'Content-Length': Buffer.byteLength(content)
+          'Content-Length': Buffer.byteLength(content),
+          'Mu-Secure-Sender': 'securerequester@redpencil.io'
         }
       }, (req) => {
         req
           .on('data', (d) => response += d )
           .on('end', () => {
-            console.log(`Got BASE64 response:\n${response}`);
-            const encryptedResponse = Buffer.from(response, 'base64');
-            console.log(`Got ENCRYPTED response:\n${encryptedResponse.toString('binary')}`);
-            fs.writeFile(encryptedResponseFile, encryptedResponse, (err) => {
-              const gpgDecryptChildProcess =
-                    spawn('gpg', ['--output', decryptedResponseFile,
-                                  '--decrypt', encryptedResponseFile]);
-              gpgDecryptChildProcess.stderr.on('data', (err) => console.log(`Decrypt request error: ${err.toString()}`));
-              gpgDecryptChildProcess.stdout.on('data', (out) => console.log(`Decrypt request info: ${out.toString()}`));
-              gpgDecryptChildProcess.on('close', () => {
-                fs.readFile(decryptedResponseFile, 'utf8', (err, decryptedResponse) => {
-                  if ( err )
-                    console.log("Something went wrong reading the decrypted response");
-                  res.connection.write( decryptedResponse );
-                  res.end();
+            if( req.statusCode != 200 ) {
+              console.log(`Server sent status code ${req.statusCode}`);
+            } else {
+              // console.log(`Got BASE64 response:\n${response}`);
+              const encryptedResponse = Buffer.from(response, 'base64');
+              // console.log(`Got ENCRYPTED response:\n${encryptedResponse.toString('binary')}`);
+              fs.writeFile(encryptedResponseFile, encryptedResponse, (err) => {
+                const gpgDecryptChildProcess =
+                      spawn('gpg', ['--output', decryptedResponseFile,
+                                    '--decrypt', encryptedResponseFile]);
+                gpgDecryptChildProcess.stderr.on('data', (err) => console.log(`Decrypt request error stream: ${err.toString()}`));
+                gpgDecryptChildProcess.stdout.on('data', (out) => console.log(`Decrypt request info stream: ${out.toString()}`));
+                gpgDecryptChildProcess.on('close', () => {
+                  fs.readFile(decryptedResponseFile, 'utf8', (err, decryptedResponse) => {
+                    if ( err )
+                      console.log("Something went wrong reading the decrypted response");
+                    res.connection.write( decryptedResponse );
+                    res.end();
+                  });
                 });
               });
-            });
+            }
           });})
       .write( content );
   });
@@ -65,6 +79,11 @@ app.get('/self', async function( req, res ) {
 
 app.post('/secure', async function( req, res ) {
   let body = '';
+  const incomingGpgBodyPath = "/data/incomingBodyGpg.txt";
+  const decryptedBodyPath = "/data/outgoingRequest.txt";
+  try { fs.unlinkSync(incomingGpgBodyPath); } catch(e) {}
+  try { fs.unlinkSync(decryptedBodyPath); } catch(e) {}
+
   req.on('data', (data) => body += data );
   req.on('end', async (data) => {
     // const headers = forwardedHeadersAsString(req.headers);
@@ -79,8 +98,13 @@ app.post('/secure', async function( req, res ) {
     //                 }
     //               } );
 
-    const incomingGpgBodyPath = "/data/incomingBodyGpg.txt";
-    const decryptedBodyPath = "/data/outgoingRequest.txt";
+    const sender = req.get('mu-secure-sender');
+
+    if( !ACCEPTED_SENDERS.includes( sender ) ){
+      console.log(`SENDER ${sender} IS NOT ACCEPTED`);
+      res.status(500).end("No response");
+      return;
+    }
 
     fs.writeFile(
       incomingGpgBodyPath,
@@ -91,77 +115,89 @@ app.post('/secure', async function( req, res ) {
         }
         // decrypt the body
         const gpgDecryptChildProcess =
-              spawn('gpg', ['--output', decryptedBodyPath,
+              spawn('gpg', ['--status-fd', '2',
+                            '--output', decryptedBodyPath,
                             '--decrypt', incomingGpgBodyPath]);
-        gpgDecryptChildProcess.stderr.on('data', (err) => console.log(`Decrypt request error: ${err.toString()}`));
-        gpgDecryptChildProcess.stdout.on('data', (out) => console.log(`Decrypt request info: ${out.toString()}`));
-        gpgDecryptChildProcess.on('close', () => {
-          // send out a request
-          fs.readFile( decryptedBodyPath, 'utf8', (err, outgoingFileBody) => {
-            if( err ) {
-              console.log(`An error occurred whilst reading the request: ${err}`);
-            } else {
-              console.log(`We got a decrypted file body. \n${outgoingFileBody}`);
+        // TODO: escape dots in sender
+        const signatureCheckProcess =
+              spawn('grep', [ '-q', `^\\\[GNUPG:\\\] GOODSIG .* <${sender}>` ]);
+        gpgDecryptChildProcess.stderr.pipe(signatureCheckProcess.stdin);
+        // gpgDecryptChildProcess.stdout.on('data', (out) => console.log(`Decrypt request info: ${out.toString()}`));
+        // ENABLING THIS BREAKS APP!
+        // gpgDecryptChildProcess.stderr.on('data', (out) => console.log(`Decrypt request info: ${out.toString()}`));
+        signatureCheckProcess.on('exit', (code) => {
+          if( code != 0 ) {
+            console.log(`It seems ${sender} did not sign this message`);
+            res.status(500).send("Could not decrypt message");
+          } else {
+            console.log(`Valid signature of ${sender} is valid`);
+            // send out a request
+            fs.readFile( decryptedBodyPath, 'utf8', (err, outgoingFileBody) => {
+              if( err ) {
+                console.log(`An error occurred whilst reading the request: ${err}`);
+              } else {
+                console.log(`We got a decrypted file body. \n${outgoingFileBody}`);
 
-              const fixedHeader = "GET /nothing HTTP/1.1\r\nHost: identifier\r\nAccept-Encoding: identity\r\nConnection: close";
-              const rawHttpRequest = `${fixedHeader}\r\n${outgoingFileBody}`;
+                const fixedHeader = "GET /nothing HTTP/1.1\r\nHost: identifier\r\nAccept-Encoding: identity\r\nConnection: close";
+                const rawHttpRequest = `${fixedHeader}\r\n${outgoingFileBody}`;
 
-              console.log(rawHttpRequest);
+                console.log(rawHttpRequest);
 
-              const client = new net.Socket();
-              let receivedData = "";
-              client
-                .connect( 80, "identifier", () => {
-                  // client.write( `${firstLine}\n${secondLine}\n${fileBody}` );
-                })
-                .on('connect', () => client.write(rawHttpRequest))
-              // Pipe the response
-                .on('data', (d) => {
-                  // NOTE: not sure how supported this is, but we want to write
-                  // the raw content and this seems to be the way to go about
-                  // it.
-                  receivedData += d.toString();
-                  // res.connection.write(d.toString());
-                })
-                .on('close', async () => {
-                  console.log("CLOSED CONNECTION");
-                  const encryptedResponseFile = '/data/encryptedResponseFromProducer.txt';
-                  const nakedResponseFile = '/data/nakedResponseFromProducer.txt';
-                  fs.writeFile(
-                    nakedResponseFile, receivedData,
-                    (err) => {
-                      if( err )
-                        console.log(`error writing file: ${err}`);
-                      else {
-                        console.log("Wrote file");
-                        const child =
-                              spawn('gpg', ['--recipient', 'secureproducer@redpencil.io',
-                                            '-o', encryptedResponseFile,
-                                            '--encrypt', nakedResponseFile]);
-                        // child.on('close', () =>
-                        //   res.download(encryptedResponseFile, 'encrypted.txt.gpg')
-                        // );
-                        child.on('close', () =>
-                          fs.readFile( encryptedResponseFile, 'binary', (err, encryptedBody) => {
-                            if( err )
-                              console.log(`Could not fully read encrypted body in producer: ${err}`);
-                            res.set('Content-Type', 'application/octet-stream');
-                            const responseString = Buffer.from(encryptedBody, 'binary').toString('base64');
-                            console.log(`Sending BASE64 response string:\n${responseString}\n`);
-                            console.log(`THIS IS BINARY response string:\n${encryptedBody}`);
-                            res.set('Content-Length', Buffer.byteLength( responseString ));
-                            res.send( responseString );
-                            res.end();
-                          }));
-                      }
-                    });
-                })
-                .on('error', () => {
-                  res.end();
-                  console.log("AN ERROR OCCURRED");
-                });
-            }
-          });
+                const client = new net.Socket();
+                let receivedData = "";
+                client
+                  .connect( 80, "identifier", () => {
+                    // client.write( `${firstLine}\n${secondLine}\n${fileBody}` );
+                  })
+                  .on('connect', () => client.write(rawHttpRequest))
+                // Pipe the response
+                  .on('data', (d) => {
+                    // NOTE: not sure how supported this is, but we want to write
+                    // the raw content and this seems to be the way to go about
+                    // it.
+                    receivedData += d.toString();
+                    // res.connection.write(d.toString());
+                  })
+                  .on('close', async () => {
+                    console.log("CLOSED CONNECTION");
+                    const encryptedResponseFile = '/data/encryptedResponseFromProducer.txt';
+                    const nakedResponseFile = '/data/nakedResponseFromProducer.txt';
+                    fs.writeFile(
+                      nakedResponseFile, receivedData,
+                      (err) => {
+                        if( err )
+                          console.log(`error writing file: ${err}`);
+                        else {
+                          console.log("Wrote file");
+                          const child =
+                                spawn('gpg', ['--recipient', 'secureproducer@redpencil.io',
+                                              '-o', encryptedResponseFile,
+                                              '--encrypt', nakedResponseFile]);
+                          // child.on('close', () =>
+                          //   res.download(encryptedResponseFile, 'encrypted.txt.gpg')
+                          // );
+                          child.on('close', () =>
+                            fs.readFile( encryptedResponseFile, 'binary', (err, encryptedBody) => {
+                              if( err )
+                                console.log(`Could not fully read encrypted body in producer: ${err}`);
+                              res.set('Content-Type', 'application/octet-stream');
+                              const responseString = Buffer.from(encryptedBody, 'binary').toString('base64');
+                              // console.log(`Sending BASE64 response string:\n${responseString}\n`);
+                              // console.log(`THIS IS BINARY response string:\n${encryptedBody}`);
+                              res.set('Content-Length', Buffer.byteLength( responseString ));
+                              res.send( responseString );
+                              res.end();
+                            }));
+                        }
+                      });
+                  })
+                  .on('error', () => {
+                    res.end();
+                    console.log("AN ERROR OCCURRED");
+                  });
+              }
+            });
+          }
         });
       });
   });
