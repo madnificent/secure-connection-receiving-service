@@ -2,6 +2,7 @@
 
 import { app, query, errorHandler } from 'mu';
 import fs from 'fs';
+import { promisify } from 'util';
 import net from 'net';
 import { spawn } from 'child_process';
 import http from 'http';
@@ -17,12 +18,7 @@ app.get('/self', async function( req, res ) {
   const encryptedResponseFile = "/data/responseGpg.txt";
   const decryptedResponseFile = "/data/response.txt";
 
-  try {
-    fs.unlinkSync( encryptedResponseFile );
-  } catch (e) {}
-  try {
-    fs.unlinkSync( decryptedResponseFile );
-  } catch (e) {}
+  await removeFiles( encryptedResponseFile, decryptedResponseFile );
 
   fs.readFile(bodyFile, 'binary', (err, bodyContent) => {
     let response = "";
@@ -81,8 +77,7 @@ app.post('/secure', async function( req, res ) {
   let body = '';
   const incomingGpgBodyPath = "/data/incomingBodyGpg.txt";
   const decryptedBodyPath = "/data/outgoingRequest.txt";
-  try { fs.unlinkSync(incomingGpgBodyPath); } catch(e) {}
-  try { fs.unlinkSync(decryptedBodyPath); } catch(e) {}
+  await removeFiles( incomingGpgBodyPath, decryptedBodyPath );
 
   req.on('data', (data) => body += data );
   req.on('end', async (data) => {
@@ -243,4 +238,28 @@ function forwardedHeadersAsString( headers ) {
     }
   }
   return body;
+}
+
+//////////////////
+// FILE MANAGEMENT
+//////////////////
+
+/**
+ * Removes a file, ignoring errors which happen when trying to remove
+ * it.
+ */
+async function removeFile( file ) {
+  const unlinkP = promisify( fs.unlink );
+
+  try {
+    await unlinkP( file );
+  } catch(e) { }
+}
+
+/**
+ * Removes a set of files.
+ */
+async function removeFiles( ...files ) {
+  for( const file of files )
+    await removeFile( file );
 }
