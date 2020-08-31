@@ -34,13 +34,64 @@
     {
       "documentation": {
         "command": "encrypt",
-        "arguments": ["relative-path-to-unencrypted-file", "relative-path-to-encrypted-file"],
+        "arguments": ["receiver", "relative-path-to-unencrypted-file", "relative-path-to-encrypted-file"],
         "description": "Decrypts a file relative to /app"
       },
       "environment": {
         "image": "semtech/secure-connection-receiving-service:dev",
         "interactive": true,
         "script": "key-scripts/encrypt.sh"
+      },
+      "mounts": {
+        "app": "/app"
+      }
+    },
+    {
+      "documentation": {
+        "command": "sign",
+        "arguments": ["signer",
+                      "relative-path-to-encrypted-file",
+                      "relative-path-to-encrypted-and-signed-file"],
+        "description": "Signs an encrypted file"
+      },
+      "environment": {
+        "image": "semtech/secure-connection-receiving-service:dev",
+        "interactive": true,
+        "script": "key-scripts/sign.sh"
+      },
+      "mounts": {
+        "app": "/app"
+      }
+    },
+    {
+      "documentation": {
+        "command": "encrypt-and-sign",
+        "arguments": ["receiver",
+                      "signer",
+                      "relative-path-to-unencrypted-file",
+                      "relative-path-to-encrypted-and-signed-file"],
+        "description": "Encrypts and signs a file relative to /app"
+      },
+      "environment": {
+        "image": "semtech/secure-connection-receiving-service:dev",
+        "interactive": true,
+        "script": "key-scripts/encrypt-and-sign.sh"
+      },
+      "mounts": {
+        "app": "/app"
+      }
+    },
+    {
+      "documentation": {
+        "command": "verify",
+        "arguments": ["relative-path-to-encrypted-file",
+                      "relative-path-to-decrypted-file"],
+        "description": "Decrypts and verifies an encrypted file"
+      },
+      "environment": {
+        "image": "semtech/secure-connection-receiving-service:dev",
+        "interactive": true,
+        "script": "key-scripts/verify.sh"
       },
       "mounts": {
         "app": "/app"

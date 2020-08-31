@@ -11,8 +11,8 @@ echo -n "Copying over contents... "
 cp -a /app/data/secureconnection/.gnupg /root/
 echo " DONE"
 
-echo "Encrypting file $2 for $1... "
-gpg --recipient $1 --output /app/$3 --encrypt /app/$2
+echo "Encrypting file $1 ... "
+gpg --sign -local-user "secureproducer@redpencil.io" --output /app/$2 --encrypt /app/$1
 echo "DONE!"
 echo ""
-echo "Find your file in $3"
+echo "Find your file in $2"

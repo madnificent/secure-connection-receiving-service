@@ -11,8 +11,7 @@ echo -n "Copying over contents... "
 cp -a /app/data/secureconnection/.gnupg /root/
 echo " DONE"
 
-echo "Encrypting file $2 for $1... "
-gpg --recipient $1 --output /app/$3 --encrypt /app/$2
-echo "DONE!"
-echo ""
-echo "Find your file in $3"
+echo "Decrypting and verifying file... "
+gpg --status-fd 1 --output /dev/null --decrypt /app/$1 2>/dev/null | grep -q '^\[GNUPG:\] GOODSIG .* <securerequester@redpencil\.io>'
+
+echo "Exit code: $?"
