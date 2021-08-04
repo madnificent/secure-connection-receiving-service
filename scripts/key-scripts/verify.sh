@@ -12,6 +12,6 @@ cp -a /app/data/secureconnection/.gnupg /root/
 echo " DONE"
 
 echo "Decrypting and verifying file... "
-gpg --status-fd 1 --output /dev/null --decrypt /app/$1 2>/dev/null | grep -q '^\[GNUPG:\] GOODSIG .* <securerequester@redpencil\.io>'
+gpg --status-fd 1 --output /dev/null --decrypt /app/$1 2>/dev/null | grep -q '^\[GNUPG:\] GOODSIG .* <secureproducer@redpencil\.io>'
 
 echo "Exit code: $?"
